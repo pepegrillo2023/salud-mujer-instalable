@@ -99,7 +99,7 @@
   }
   .age-edit-inline span{color:#fff;font-size:13px;}
   .age-edit-inline input{
-    width:64px;
+    width:82px;
     padding:6px 8px;
     border-radius:20px;
     border:none;
@@ -638,7 +638,7 @@ function buildDefaultState(){
       });
     });
   });
-  return { age: null, studies };
+  return { birthYear: null, studies };
 }
 
 function loadState(){
@@ -646,7 +646,15 @@ function loadState(){
     const raw = localStorage.getItem(STORAGE_KEY);
     if(raw){
       state = JSON.parse(raw);
-      if(state.age === undefined) state.age = null;
+      if(state.birthYear === undefined || state.birthYear === null){
+        // Migración: versiones anteriores guardaban la edad directamente.
+        if(state.age !== undefined && state.age !== null && state.age !== ''){
+          state.birthYear = new Date().getFullYear() - Number(state.age);
+        } else {
+          state.birthYear = null;
+        }
+      }
+      delete state.age;
       state.studies.forEach(s=>{
         if(s.specialist === undefined) s.specialist = "";
         if(s.attachment === undefined) s.attachment = null;
@@ -690,9 +698,16 @@ function fmt(d){
   return d.toLocaleDateString('es-AR', { day:'2-digit', month:'short', year:'numeric' });
 }
 
+function getAge(){
+  if(state.birthYear === null || state.birthYear === undefined || state.birthYear === '') return null;
+  const age = new Date().getFullYear() - Number(state.birthYear);
+  return (isNaN(age) || age < 0) ? null : age;
+}
+
 function isIndicated(study){
-  if(state.age === null || state.age === undefined) return true;
-  return state.age >= study.minAge;
+  const age = getAge();
+  if(age === null) return true;
+  return age >= study.minAge;
 }
 
 function getStatus(study){
@@ -711,31 +726,38 @@ function escapeHtml(str){
   return String(str ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-/* ---------- AGE CHIP ---------- */
+/* ---------- AGE CHIP (a partir del año de nacimiento) ---------- */
 function renderAgeChip(){
   const el = document.getElementById('ageChip');
+  const currentYear = new Date().getFullYear();
   if(editingAge){
     el.innerHTML = `
       <div class="age-edit-inline">
-        <span>Edad:</span>
-        <input type="number" min="10" max="100" id="ageInput" value="${state.age ?? ''}" placeholder="—">
-        <button onclick="confirmAge()">Guardar</button>
+        <span>Año de nacimiento:</span>
+        <input type="number" min="1920" max="${currentYear}" id="birthYearInput" value="${state.birthYear ?? ''}" placeholder="Ej: 1972">
+        <button onclick="confirmBirthYear()">Guardar</button>
       </div>
     `;
     setTimeout(()=>{
-      const inp = document.getElementById('ageInput');
+      const inp = document.getElementById('birthYearInput');
       if(inp){ inp.focus(); inp.select(); }
     }, 0);
   } else {
-    const label = (state.age !== null && state.age !== undefined) ? `🎂 ${state.age} años · editar` : `🎂 Agregar tu edad`;
+    const age = getAge();
+    const label = age !== null ? `🎂 ${age} años (nacida en ${state.birthYear}) · editar` : `🎂 Agregar tu año de nacimiento`;
     el.innerHTML = `<div class="age-chip" onclick="editingAge=true; renderAgeChip();">${label}</div>`;
   }
 }
 
-function confirmAge(){
-  const inp = document.getElementById('ageInput');
-  const v = inp.value === '' ? null : Number(inp.value);
-  state.age = v;
+function confirmBirthYear(){
+  const inp = document.getElementById('birthYearInput');
+  const currentYear = new Date().getFullYear();
+  let v = inp.value === '' ? null : Number(inp.value);
+  if(v !== null && (isNaN(v) || v < 1900 || v > currentYear)){
+    showToast('Ingresá un año de nacimiento válido.');
+    return;
+  }
+  state.birthYear = v;
   editingAge = false;
   saveState();
   render();
@@ -1081,6 +1103,14 @@ function importBackup(event){
         if(s.specialist === undefined) s.specialist = "";
         if(!s.id) s.id = uid();
       });
+      if(imported.birthYear === undefined || imported.birthYear === null){
+        if(imported.age !== undefined && imported.age !== null && imported.age !== ''){
+          imported.birthYear = new Date().getFullYear() - Number(imported.age);
+        } else {
+          imported.birthYear = null;
+        }
+      }
+      delete imported.age;
       state = imported;
       saveState();
       openStudyId = null;
